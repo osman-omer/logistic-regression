@@ -1,132 +1,200 @@
-# Project 6 — Logistic Regression (Heart Disease Dataset)
+# Project 6 — Logistic Regression: Heart Disease Prediction
 
 ## 📌 Project Goal
-Learn how to use **Logistic Regression** for binary classification.  
-The focus is on understanding:
+This project applies **logistic regression** to predict the presence of heart disease (binary outcome) using clinical and diagnostic variables.
 
-- Binary outcome modeling  
-- Odds ratios interpretation  
-- Model comparison (deviance, AIC, BIC)  
-- Classification metrics (accuracy, sensitivity, specificity)  
-- ROC curve and AUC  
+The primary objective is methodological learning:
+- Binary classification modeling
+- Odds ratio interpretation
+- Model comparison (Deviance, AIC, BIC)
+- Confusion matrix evaluation
+- ROC curve and AUC analysis
 
-This project is **purely educational** and not intended for clinical use.
+This project is strictly for educational purposes.
 
 ---
 
 ## 📊 Dataset
 - Source: UCI / Kaggle Heart Disease dataset  
-- Outcome variable:  
-  - `target` → 0 = No heart disease  
-  - `target` → 1 = Heart disease  
+- Outcome: `target` (0 = No disease, 1 = Disease)  
+- Sample size: n ≈ 1000  
+- Balanced dataset (~50% disease prevalence)
 
-- Predictors include:  
-  - Demographic: `age`, `sex`  
-  - Clinical: `trestbps`, `chol`, `fbs`, `thalach`  
-  - Diagnostic: `cp`, `restecg`, `exang`, `oldpeak`, `slope`, `ca`, `thal`
-
-The dataset is approximately balanced between disease and non-disease cases.
+A balanced outcome ensures unbiased classification performance.
 
 ---
 
-## 🧪 Analysis Overview
+# 🧠 Logistic Regression Model
 
-- Data quality checks (`glimpse`, `summary`, missing values)  
-- Convert categorical variables to factors  
-- Exploratory Data Analysis (EDA)  
-- Logistic regression using `glm(..., family = binomial)`  
-- Model comparison using Deviance, AIC, and BIC  
-- Confusion matrices  
-- ROC curve and AUC  
+Logistic regression models the probability of disease using:
 
-Three models were built:
-
-1. **Age-only model**
-2. **Clinical model**
-3. **Full diagnostic model**
-
-Predicted probabilities were converted to class predictions using a 0.5 threshold.
-
----
-
-## 📈 Key Findings
-
-- The age-only model demonstrates how age influences disease odds.
-- The clinical model improves predictive performance.
-- The full diagnostic model achieves the strongest classification performance with higher accuracy and AUC.
-
----
-
-## 🧠 Logistic Regression Model
-
-Unlike linear regression, logistic regression models the probability of a binary outcome using the logistic function:
-
-\[
-P(Y=1) = \frac{1}{1 + e^{-(\beta_0 + \beta_1X_1 + \beta_2X_2 + ... + \beta_kX_k)}}
-\]
+P(disease = 1) = 1 / (1 + e^(-(β₀ + β₁X₁ + ... + βₖXₖ)))
 
 Where:
-- \(Y = 1\) represents presence of heart disease  
-- \(\beta\) coefficients represent log-odds changes  
-
----
-
-## 🧠 Odds Ratios (OR)
-
-- Model coefficients are in **log-odds** form.
-- Exponentiating coefficients gives **odds ratios**:
-
-\[
-OR = e^{\beta}
-\]
+- Coefficients (β) represent **log-odds**
+- exp(β) gives **Odds Ratios (OR)**
 
 Interpretation:
-- OR > 1 → Increased odds of disease  
-- OR < 1 → Decreased odds  
-- OR = 1 → No effect  
+- OR > 1 → Increased odds of disease
+- OR < 1 → Decreased odds
+- OR = 1 → No association
 
-Important: Odds ratio ≠ probability ratio.
-
----
-
-## 📊 Model Evaluation Metrics
-
-- **Accuracy** → Overall correct classification rate  
-- **Sensitivity** → True positive rate  
-- **Specificity** → True negative rate  
-- **PPV / NPV** → Predictive values  
-- **ROC Curve** → Sensitivity vs 1 − Specificity  
-- **AUC** → Overall discriminative ability  
-
-AUC interpretation:
-- 0.5 → Random  
-- 0.7–0.8 → Fair  
-- 0.8–0.9 → Good  
-- 0.9+ → Excellent  
+Important: Odds ratios are not probability ratios.
 
 ---
 
-## 📌 Limitations
+# 🧪 Models Built
 
-- No train/test split  
-- Model evaluated on training data  
-- No cross-validation  
-- No interaction terms explored  
-- Fixed probability threshold (0.5)  
+Three models were fitted:
 
-This project demonstrates **methodology**, not clinical validity.
+### 1️⃣ Age-Only Model
+- Demonstrates basic logistic regression
+- Shows how age affects odds of heart disease
+- Limited predictive power
 
 ---
 
-## 🎯 Conclusion
+### 2️⃣ Clinical Model
+Includes:
+- Age
+- Sex
+- Chest pain type
+- Blood pressure
+- Cholesterol
+- Fasting blood sugar
+- Maximum heart rate
 
-This project illustrates how logistic regression can be used for binary classification, including:
+**Performance:**
+- Good discriminative ability
+- Moderate sensitivity and specificity
+- Suitable for screening-level modeling
 
-- Model fitting in R  
-- Interpretation of odds ratios  
-- Model comparison  
-- Classification performance evaluation  
+---
 
-The primary objective is methodological understanding and proper modeling workflow.
+### 3️⃣ Full Diagnostic Model
+Includes all available predictors:
+- ECG findings
+- Exercise test variables
+- Angiography results
+- Clinical measurements
 
-> This project is intended for learning and statistical practice only.
+**Performance Improvements:**
+- Substantially lower deviance
+- Lower AIC and BIC
+- Higher accuracy
+- Higher sensitivity (fewer missed cases)
+- Higher specificity (fewer false positives)
+- Higher AUC
+
+---
+
+# 📊 Model Comparison
+
+## Deviance Reduction
+- Clinical model significantly improves over null model
+- Full model provides substantial additional improvement
+
+Lower deviance = better model fit.
+
+---
+
+## AIC / BIC
+Both criteria favor the **Full Model**, indicating that the increase in complexity is justified by improved fit.
+
+---
+
+# 📈 Classification Performance
+
+## Clinical Model
+- Good overall accuracy
+- Balanced sensitivity and specificity
+- Useful when only routine measurements are available
+
+## Full Model
+- Higher accuracy
+- Higher sensitivity
+- Higher specificity
+- Higher negative predictive value
+- Stronger overall diagnostic performance
+
+---
+
+# 📉 ROC Curve & AUC
+
+The ROC curve compares sensitivity vs 1-specificity across all thresholds.
+
+### AUC Interpretation:
+- 0.5 → Random guessing
+- 0.7–0.8 → Fair
+- 0.8–0.9 → Good
+- >0.9 → Excellent
+
+Results show:
+- Clinical model → Good discrimination
+- Full model → Excellent discrimination
+
+The full model clearly outperforms the clinical model.
+
+---
+
+# ⚠️ Limitations
+
+## Dataset Limitations
+- Possible referral bias
+- Hospital-based sample
+- Unusual epidemiological patterns
+- Not representative of general population
+
+## Modeling Limitations
+- No train/test split
+- No cross-validation
+- Evaluated on training data (optimistic performance)
+- No interaction terms explored
+- Fixed 0.5 probability threshold
+
+---
+
+# 🚫 Clinical Caution
+
+This analysis:
+- Does NOT provide a validated diagnostic tool
+- Does NOT establish causation
+- Should NOT be used for patient care
+
+It demonstrates statistical methodology only.
+
+---
+
+# 🎯 Conclusion
+
+The Full Diagnostic Model substantially outperforms the Clinical Model across:
+
+- Deviance
+- AIC/BIC
+- Accuracy
+- Sensitivity
+- Specificity
+- AUC
+
+However, improved predictive performance comes at the cost of greater complexity and reliance on specialized diagnostic tests.
+
+This project successfully demonstrates:
+
+- Logistic regression for binary outcomes
+- Interpretation of odds ratios
+- Model comparison techniques
+- ROC and AUC analysis
+- Importance of validation and limitations
+
+---
+
+## 📚 Educational Value
+
+This project serves as a practical implementation of logistic regression in a medical classification context and reinforces core statistical modeling principles.
+
+Future improvements may include:
+- Train/test validation
+- Cross-validation
+- Regularization (LASSO / Ridge)
+- Interaction terms
+- Comparison with machine learning models
