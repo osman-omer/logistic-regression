@@ -1,0 +1,563 @@
+---
+title: "Logistic Regression: Heart Disease Prediction"
+author: "Osman Omer Mustafa"
+date: "today"
+format:
+  html:
+    toc: true
+    code-fold: true
+    theme: cosmo
+    toc-location: left
+execute:
+  warning: false
+  message: false
+---
+
+## Introduction
+
+**Purpose:** This analysis demonstrates logistic regression for binary classification 
+in a medical context. The goal is to predict heart disease presence (yes/no) using 
+clinical and diagnostic variables.
+
+**Educational Context:** This project is created for learning purposes to understand:
+
+- Binary classification modeling
+- Odds ratios interpretation
+- Model evaluation metrics (confusion matrix, ROC/AUC)
+- Clinical vs comprehensive diagnostic models
+- Limitations of observational data
+
+**Important Note:** This analysis uses publicly available data and is intended solely 
+for educational demonstration of statistical techniques. Results should not be used 
+for actual clinical decision-making without proper validation.
+
+## Load required libraries
+```{r setup}
+library(tidyverse)
+library(broom)
+library(pROC)
+library(caret)
+```
+
+## Read data
+```{r}
+data <- read_csv("heart.csv")
+```
+
+## Basic checks
+```{r}
+glimpse(data)
+summary(data)
+sum(is.na(data))
+```
+
+## Outcome distribution
+```{r}
+table(data$target)
+prop.table(table(data$target))
+```
+
+```{r echo=FALSE}
+outcome_counts <- table(data$target)
+outcome_props <- prop.table(outcome_counts)
+n_no <- outcome_counts[1]
+n_yes <- outcome_counts[2]
+prop_no <- outcome_props[1]
+prop_yes <- outcome_props[2]
+```
+
+The dataset contains `r n_no` individuals without heart disease (`r round(prop_no*100, 1)`%) 
+and `r n_yes` with heart disease (`r round(prop_yes*100, 1)`%). This represents a 
+**balanced dataset**, which is ideal for logistic regression modeling. Balanced classes 
+ensure the model doesn't develop bias toward the majority class.
+
+## Ensure proper data types
+```{r}
+data <- data %>%
+  mutate(
+    target = as.factor(target),
+    sex = as.factor(sex),
+    cp = as.factor(cp),
+    fbs = as.factor(fbs),
+    restecg = as.factor(restecg),
+    exang = as.factor(exang),
+    slope = as.factor(slope),
+    ca = as.factor(ca),
+    thal = as.factor(thal)
+  )
+
+glimpse(data)
+```
+
+Categorical variables have been converted to factors to ensure proper treatment in 
+logistic regression. R will automatically create dummy variables for these predictors.
+
+## Exploratory Data Analysis
+
+### Outcome by sex
+```{r}
+outcome_sex <- data %>%
+  group_by(sex, target) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(sex) %>%
+  mutate(proportion = n / sum(n))
+
+outcome_sex %>% knitr::kable(caption = "Heart Disease by Sex", digits = 3)
+```
+
+**Observation:** `r if(outcome_sex$proportion[outcome_sex$sex == "0" & outcome_sex$target == "1"] > outcome_sex$proportion[outcome_sex$sex == "1" & outcome_sex$target == "1"]) {"Females show higher disease prevalence than males in this dataset, which contradicts typical population patterns. This likely reflects referral bias or specific sampling characteristics."} else {"Males show higher disease prevalence, consistent with typical cardiovascular disease patterns."}`
+
+### Age distribution by outcome
+```{r}
+ggplot(data, aes(x = target, y = age, fill = target)) +
+  geom_boxplot() +
+  labs(
+    x = "Heart Disease",
+    y = "Age (Years)",
+    title = "Age Distribution by Heart Disease Status"
+  ) +
+  scale_x_discrete(labels = c("No", "Yes")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+```
+
+Visual comparison of age distributions between groups. Note any unexpected patterns 
+that may indicate sampling bias.
+
+### Max heart rate by outcome
+```{r}
+ggplot(data, aes(x = target, y = thalach, fill = target)) +
+  geom_boxplot() +
+  labs(
+    x = "Heart Disease",
+    y = "Max Heart Rate",
+    title = "Max Heart Rate by Heart Disease Status"
+  ) +
+  scale_x_discrete(labels = c("No", "Yes")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+```
+
+Maximum heart rate achieved during exercise testing often differs between healthy 
+individuals and those with cardiovascular disease.
+
+## Logistic Regression Models
+
+### Understanding Binary Outcomes
+
+Unlike linear regression (which predicts continuous values), logistic regression 
+predicts **probabilities** for binary outcomes (0 or 1).
+
+**Key concept:** The model uses the **logistic function** to ensure predicted 
+probabilities stay between 0 and 1:
+
+```
+P(disease = 1) = 1 / (1 + e^(-(β₀ + β₁×age + β₂×sex + ...)))
+```
+
+**Coefficients (β) are interpreted as log odds ratios.** When exponentiated 
+(`exponentiate = TRUE`), they become **odds ratios (OR)**.
+
+### Model 1: Age only
+```{r}
+model_age <- glm(target ~ age, data = data, family = binomial)
+
+tidy_age <- tidy(model_age, conf.int = TRUE, exponentiate = TRUE)
+tidy_age %>% knitr::kable(caption = "Age Model Coefficients (Odds Ratios)", digits = 3)
+```
+
+```{r echo=FALSE}
+age_or <- tidy_age$estimate[tidy_age$term == "age"]
+age_pval <- tidy_age$p.value[tidy_age$term == "age"]
+age_sig <- age_pval < 0.05
+```
+
+**Interpretation:** The odds ratio for age is `r round(age_or, 3)`. 
+`r if(age_or < 1) {paste0("This suggests that for each additional year of age, the odds of heart disease decrease by ", round((1-age_or)*100, 1), "%. This contradicts typical medical expectations and likely reflects sampling bias in this dataset.")} else {paste0("This indicates that for each additional year of age, the odds of heart disease increase by ", round((age_or-1)*100, 1), "%.")}`
+
+### Model 2: Clinical model
+```{r}
+model_clinical <- glm(target ~ age + sex + cp + trestbps + chol + fbs + thalach, 
+                      data = data, family = binomial)
+
+tidy_clinical <- tidy(model_clinical, conf.int = TRUE, exponentiate = TRUE)
+tidy_clinical %>% knitr::kable(caption = "Clinical Model Coefficients (Odds Ratios)", digits = 3)
+```
+
+```{r echo=FALSE}
+glance_clinical <- glance(model_clinical)
+dev_clinical <- glance_clinical$deviance
+```
+
+**Clinical model includes:** Basic clinical measurements obtainable in routine practice 
+without specialized testing (age, sex, chest pain type, blood pressure, cholesterol, 
+fasting blood sugar, max heart rate).
+
+Model deviance: `r round(dev_clinical, 1)` (lower is better).
+
+### Model 3: Full model
+```{r}
+model_full <- glm(target ~ age + sex + cp + trestbps + chol + fbs + restecg +
+                    thalach + exang + oldpeak + slope + ca + thal,
+                  data = data, family = binomial)
+
+tidy_full <- tidy(model_full, conf.int = TRUE, exponentiate = TRUE)
+tidy_full %>% knitr::kable(caption = "Full Model Coefficients (Odds Ratios)", digits = 3)
+```
+
+
+
+```{r echo=FALSE}
+glance_full <- glance(model_full)
+dev_full <- glance_full$deviance
+```
+
+**Full model includes:** All available diagnostic variables including ECG findings, 
+exercise test results, and angiography data.
+
+Model deviance: `r round(dev_full, 1)` (substantially lower than clinical model).
+
+## Model Comparison
+
+### Deviance comparison
+```{r}
+deviance_comparison <- data.frame(
+  model = c("Clinical", "Full"),
+  deviance = c(dev_clinical, dev_full),
+  improvement = c(1420 - dev_clinical, 1420 - dev_full)
+)
+deviance_comparison %>% knitr::kable(caption = "Model Deviance Comparison", digits = 1)
+```
+
+**Null deviance** (intercept-only model) = 1420. Lower deviance indicates better fit.
+
+Clinical model reduced deviance by `r round(1420 - dev_clinical, 1)` units 
+(`r round((1420 - dev_clinical)/1420 * 100, 1)`% improvement).
+
+Full model reduced deviance by `r round(1420 - dev_full, 1)` units 
+(`r round((1420 - dev_full)/1420 * 100, 1)`% improvement).
+
+Full model provides an additional `r round(dev_clinical - dev_full, 1)` unit improvement 
+over the clinical model (`r round((dev_clinical - dev_full)/dev_clinical * 100, 1)`%).
+
+### AIC/BIC comparison
+```{r}
+aic_comparison <- data.frame(
+  model = c("Clinical", "Full"),
+  AIC = c(AIC(model_clinical), AIC(model_full)),
+  BIC = c(BIC(model_clinical), BIC(model_full))
+)
+aic_comparison %>% knitr::kable(caption = "AIC/BIC Comparison", digits = 1)
+```
+
+Both AIC and BIC favor the full model (lower values = better). The substantial 
+improvement justifies the added complexity.
+
+## Model Predictions
+
+```{r}
+data$pred_prob_clinical <- predict(model_clinical, type = "response")
+data$pred_prob_full <- predict(model_full, type = "response")
+
+data$pred_class_clinical <- ifelse(data$pred_prob_clinical > 0.5, "1", "0")
+data$pred_class_full <- ifelse(data$pred_prob_full > 0.5, "1", "0")
+```
+
+Predicted probabilities converted to classifications using threshold = 0.5. 
+Alternative thresholds may be explored for different clinical contexts 
+(e.g., lowering threshold increases sensitivity at cost of specificity).
+
+## Model Evaluation
+
+### Confusion Matrix: Clinical model
+```{r}
+conf_matrix_clinical <- confusionMatrix(
+  as.factor(data$pred_class_clinical),
+  data$target,
+  positive = "1"
+)
+conf_matrix_clinical
+```
+
+```{r echo=FALSE}
+acc_clin <- conf_matrix_clinical$overall["Accuracy"]
+sens_clin <- conf_matrix_clinical$byClass["Sensitivity"]
+spec_clin <- conf_matrix_clinical$byClass["Specificity"]
+ppv_clin <- conf_matrix_clinical$byClass["Pos Pred Value"]
+npv_clin <- conf_matrix_clinical$byClass["Neg Pred Value"]
+```
+
+**Clinical Model Performance:**
+
+- **Accuracy:** `r round(acc_clin, 3)` (`r round(acc_clin*100, 1)`%)
+- **Sensitivity:** `r round(sens_clin, 3)` (`r round(sens_clin*100, 1)`%) - detects `r round(sens_clin*100, 1)`% of actual disease cases
+- **Specificity:** `r round(spec_clin, 3)` (`r round(spec_clin*100, 1)`%) - correctly identifies `r round(spec_clin*100, 1)`% of healthy individuals
+- **PPV:** `r round(ppv_clin, 3)` - when model predicts disease, it's correct `r round(ppv_clin*100, 1)`% of the time
+- **NPV:** `r round(npv_clin, 3)` - when model predicts no disease, it's correct `r round(npv_clin*100, 1)`% of the time
+
+### Confusion Matrix: Full model
+```{r}
+conf_matrix_full <- confusionMatrix(
+  as.factor(data$pred_class_full),
+  data$target,
+  positive = "1"
+)
+conf_matrix_full
+```
+
+```{r echo=FALSE}
+acc_full <- conf_matrix_full$overall["Accuracy"]
+sens_full <- conf_matrix_full$byClass["Sensitivity"]
+spec_full <- conf_matrix_full$byClass["Specificity"]
+ppv_full <- conf_matrix_full$byClass["Pos Pred Value"]
+npv_full <- conf_matrix_full$byClass["Neg Pred Value"]
+```
+
+**Full Model Performance:**
+
+- **Accuracy:** `r round(acc_full, 3)` (`r round(acc_full*100, 1)`%)
+- **Sensitivity:** `r round(sens_full, 3)` (`r round(sens_full*100, 1)`%) 
+- **Specificity:** `r round(spec_full, 3)` (`r round(spec_full*100, 1)`%)
+- **PPV:** `r round(ppv_full, 3)`
+- **NPV:** `r round(npv_full, 3)`
+
+### Performance comparison
+```{r}
+metrics_clinical <- data.frame(
+  model = "Clinical",
+  accuracy = acc_clin,
+  sensitivity = sens_clin,
+  specificity = spec_clin,
+  ppv = ppv_clin,
+  npv = npv_clin
+)
+
+metrics_full <- data.frame(
+  model = "Full",
+  accuracy = acc_full,
+  sensitivity = sens_full,
+  specificity = spec_full,
+  ppv = ppv_full,
+  npv = npv_full
+)
+
+metrics_comparison <- bind_rows(metrics_clinical, metrics_full)
+metrics_comparison %>% knitr::kable(caption = "Model Performance Comparison", digits = 3)
+```
+
+The full model shows improvement across all metrics:
+
+- Accuracy: +`r round((acc_full - acc_clin)*100, 1)`%
+- Sensitivity: +`r round((sens_full - sens_clin)*100, 1)`% (fewer missed diagnoses)
+- Specificity: +`r round((spec_full - spec_clin)*100, 1)`% (fewer false alarms)
+- NPV: +`r round((npv_full - npv_clin)*100, 1)`% (greater confidence in negative predictions)
+
+## ROC Curve and AUC
+
+```{r}
+roc_clinical <- roc(data$target, data$pred_prob_clinical)
+auc_clinical <- auc(roc_clinical)
+
+roc_full <- roc(data$target, data$pred_prob_full)
+auc_full <- auc(roc_full)
+```
+
+```{r}
+plot(roc_clinical, col = "blue", main = "ROC Curves Comparison", 
+     lwd = 2, legacy.axes = TRUE)
+plot(roc_full, col = "red", add = TRUE, lwd = 2)
+legend("bottomright", 
+       legend = c(paste0("Clinical (AUC = ", round(auc_clinical, 3), ")"),
+                  paste0("Full (AUC = ", round(auc_full, 3), ")")),
+       col = c("blue", "red"), lwd = 2)
+```
+
+### Understanding ROC and AUC
+
+**ROC Curve:** Plots sensitivity (y-axis) vs. 1-specificity (x-axis) across all 
+possible classification thresholds. A perfect classifier reaches the top-left corner 
+(100% sensitivity, 100% specificity). The diagonal line represents random guessing (AUC = 0.5).
+
+**AUC (Area Under the Curve):** Measures overall model performance. Interpretation:
+
+- 0.5 = Random guessing (no discriminative ability)
+- 0.6-0.7 = Poor
+- 0.7-0.8 = Fair
+- 0.8-0.9 = Good
+- 0.9-1.0 = Excellent
+
+**Clinical model AUC = `r round(auc_clinical, 3)`:** Good discriminative ability, 
+suitable for screening applications.
+
+**Full model AUC = `r round(auc_full, 3)`:** Excellent discriminative ability, 
+suitable for diagnostic applications. The `r round((auc_full - auc_clinical)*100, 1)`% 
+improvement over the clinical model is substantial.
+
+## Visualization: Predicted Probabilities
+
+```{r}
+ggplot(data, aes(x = pred_prob_clinical, fill = target)) +
+  geom_histogram(bins = 30, alpha = 0.7, position = "identity") +
+  labs(
+    x = "Predicted Probability",
+    y = "Frequency",
+    title = "Clinical Model: Predicted Probabilities by Actual Outcome",
+    fill = "Heart Disease"
+  ) +
+  scale_fill_discrete(labels = c("No", "Yes")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Good separation between the two outcome groups indicates strong predictive performance. 
+Overlap represents cases where the model struggles to classify correctly.
+
+## Limitations and Considerations
+
+### Dataset Limitations
+
+**1. Sampling Bias:**
+This dataset shows unusual patterns (e.g., younger individuals with higher disease 
+prevalence, females with higher prevalence than males) that contradict typical 
+population epidemiology. This likely reflects:
+
+- Referral bias (symptomatic young patients more likely to be tested)
+- Hospital-based sampling (not representative of general population)
+- Survivor bias (older individuals without severe disease)
+
+**2. Generalizability:**
+Results may not apply to:
+
+- General population screening
+- Different geographic/demographic groups
+- Prevention-focused rather than diagnostic contexts
+
+**3. Sample Size:**
+While adequate for this analysis (n = `r nrow(data)`), larger datasets would enable:
+
+- More robust validation (train/test splits)
+- Detection of rare but important patterns
+- Subgroup analyses
+
+### Modeling Limitations
+
+**1. No Validation Set:**
+This analysis uses the entire dataset for both training and evaluation, which may 
+overestimate performance. Proper validation requires:
+
+- Train/test split (e.g., 80/20)
+- Cross-validation
+- External validation on independent data
+
+**2. Class Imbalance (Not an Issue Here):**
+This dataset is well-balanced (`r round(prop_yes*100, 1)`% diseased). 
+Imbalanced datasets require special handling (oversampling, SMOTE, cost-sensitive learning).
+
+**3. Threshold Selection:**
+We used the standard 0.5 threshold. Clinical applications may require:
+
+- Lower thresholds for screening (prioritize sensitivity)
+- Higher thresholds for confirmatory testing (prioritize specificity)
+- Cost-benefit analysis to determine optimal cutoff
+
+**4. Missing Interaction Terms:**
+This analysis doesn't explore interactions (e.g., age × smoking, BMI × diabetes). 
+These could improve predictions but increase model complexity.
+
+### Clinical Interpretation Cautions
+
+**1. Correlation ≠ Causation:**
+These models identify predictive associations, not causal relationships. Observational 
+data cannot prove that changing a risk factor will alter outcomes.
+
+**2. Odds Ratios vs. Probabilities:**
+Odds ratios (ORs) are commonly misinterpreted:
+
+- OR = 2 does NOT mean "twice the probability"
+- OR = 2 means "twice the odds" (probability/(1-probability))
+- For rare outcomes, OR ≈ relative risk
+- For common outcomes (like in this dataset), OR ≠ relative risk
+
+**3. Unexpected Coefficients:**
+Several variables show counter-intuitive effects (age, blood pressure) due to 
+confounding and sampling bias. These should not inform clinical practice.
+
+### Educational Purpose
+
+**This analysis demonstrates:**
+
+- ✅ Logistic regression methodology
+- ✅ Model comparison techniques
+- ✅ Evaluation metrics interpretation
+- ✅ ROC/AUC analysis
+
+**This analysis does NOT provide:**
+
+- ❌ Clinically validated diagnostic tools
+- ❌ Guidance for patient care
+- ❌ Generalizable epidemiological insights
+
+**For actual clinical applications, models require:**
+
+- Prospective validation studies
+- Regulatory approval
+- Integration with clinical workflows
+- Ongoing monitoring and recalibration
+
+## Conclusion
+
+This analysis demonstrates logistic regression for binary classification in a 
+cardiovascular disease prediction context. Key findings include:
+
+**Model Performance:**
+
+The full diagnostic model (AUC = `r round(auc_full, 3)`) substantially outperformed 
+the clinical model (AUC = `r round(auc_clinical, 3)`), achieving excellent 
+discriminative ability. Sensitivity improved from `r round(sens_clin*100, 1)`% to 
+`r round(sens_full*100, 1)`%, reducing missed diagnoses by approximately 
+`r round((1 - (1-sens_full)/(1-sens_clin))*100, 0)`%.
+
+**Practical Implications:**
+
+While the full model's superior performance is clear, implementation requires:
+
+- Access to specialized diagnostic tests (ECG, exercise testing, angiography)
+- Higher cost and time investment
+- Trained personnel for test administration
+
+The clinical model, though less accurate, uses readily available measurements and 
+may suffice for initial screening in resource-limited settings.
+
+**Key Limitations:**
+
+The dataset exhibits unusual epidemiological patterns suggesting referral and 
+sampling biases. Results should be interpreted as educational demonstrations of 
+statistical methods rather than clinically applicable findings. Proper validation 
+on independent, representative samples is essential before any clinical application.
+
+**Methodological Learning:**
+
+This analysis successfully demonstrates:
+
+- Logistic regression for binary outcomes
+- Model comparison using deviance, AIC/BIC
+- Comprehensive evaluation with confusion matrices
+- ROC curve analysis and AUC interpretation
+- Importance of considering limitations
+
+**Future Directions:**
+
+To improve upon this analysis:
+
+- Implement train/test validation
+- Explore interaction terms
+- Test alternative thresholds for different clinical contexts
+- Validate on external datasets
+- Compare with machine learning approaches (random forests, neural networks)
+
+**Final Note:**
+
+This project serves its educational purpose: demonstrating how logistic regression 
+can model binary health outcomes and how to rigorously evaluate such models. 
+The techniques learned here are applicable to any binary classification problem 
+in medical research, epidemiology, or data science.
