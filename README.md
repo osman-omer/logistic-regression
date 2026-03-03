@@ -1,4 +1,4 @@
-# Project 6 — Logistic Regression: Heart Disease Prediction
+# Project 1 — Logistic Regression: Heart Disease Prediction
 
 ## 📌 Project Goal
 This project applies **logistic regression** to predict the presence of heart disease (binary outcome) using clinical and diagnostic variables.
